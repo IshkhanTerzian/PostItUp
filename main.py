@@ -14,22 +14,35 @@ from flask import abort
 from dotenv import load_dotenv
 import os
 
+# Application setup and configuration
 app = Flask(__name__)
 load_dotenv()
 database_uri = os.getenv('DATABASE_URI')
 secret_key = os.getenv('SECRET_KEY')
 
-
+# Check if environment variables are set
 if not database_uri:
     raise RuntimeError("DATABASE_URI is not set in the environment variables.")
-
-app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
 
 if not secret_key:
     raise RuntimeError("secret_key is not set in the environment variables.")
 
+# Configure Flask app
+app.config['SQLALCHEMY_DATABASE_URI'] = database_uri
 app.config['SECRET_KEY'] = secret_key
 
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///posts.db'
+
+
+# Create the database and configure tables
+class Base(DeclarativeBase):
+    pass
+
+
+db = SQLAlchemy(model_class=Base)
+db.init_app(app)
+
+# Initialize Flask extensions
 ckeditor = CKEditor(app)
 Bootstrap5(app)
 login_manager = LoginManager()
@@ -45,11 +58,13 @@ gravatar = Gravatar(app,
                     base_url=None)
 
 
+# Define the main user loader function for Flask-Login
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
 
 
+# Decorator for admin-only access to certain routes
 def admin_only(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -60,17 +75,7 @@ def admin_only(f):
     return decorated_function
 
 
-# CREATE DATABASE
-class Base(DeclarativeBase):
-    pass
-
-
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///posts.db'
-db = SQLAlchemy(model_class=Base)
-db.init_app(app)
-
-
-# CONFIGURE TABLES
+# Define database models
 class BlogPost(db.Model):
     __tablename__ = "blog_posts"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
@@ -104,10 +109,12 @@ class Comment(db.Model):
     parent_post = relationship("BlogPost", back_populates="comments")
 
 
+# Create all tables in the database
 with app.app_context():
     db.create_all()
 
 
+# Routes for user registration, login, and logout
 @app.route('/register', methods=['POST', 'GET'])
 def register():
     form = RegisterForm()
@@ -160,6 +167,7 @@ def logout():
     return redirect(url_for('get_all_posts'))
 
 
+# Route for displaying all blog posts
 @app.route('/')
 def get_all_posts():
     result = db.session.execute(db.select(BlogPost))
@@ -167,6 +175,7 @@ def get_all_posts():
     return render_template("index.html", all_posts=posts, current_user=current_user)
 
 
+# Route for displaying a specific blog post
 @app.route("/post/<int:post_id>", methods=["POST", "GET"])
 def show_post(post_id):
     requested_post = db.get_or_404(BlogPost, post_id)
@@ -187,6 +196,7 @@ def show_post(post_id):
     return render_template("post.html", post=requested_post, current_user=current_user, form=comment_form)
 
 
+# Admin-only route for creating a new blog post
 @admin_only
 @app.route("/new-post", methods=["GET", "POST"])
 def add_new_post():
@@ -206,6 +216,7 @@ def add_new_post():
     return render_template("make-post.html", form=form, current_user=current_user)
 
 
+# Route for editing an existing blog post
 @app.route("/edit-post/<int:post_id>", methods=["GET", "POST"])
 @admin_only
 def edit_post(post_id):
@@ -228,6 +239,7 @@ def edit_post(post_id):
     return render_template("make-post.html", form=edit_form, is_edit=True, current_user=current_user)
 
 
+# Admin-only route for deleting a blog post
 @app.route("/delete/<int:post_id>")
 @admin_only
 def delete_post(post_id):
@@ -237,6 +249,7 @@ def delete_post(post_id):
     return redirect(url_for('get_all_posts'))
 
 
+# Route for displaying the 'About' page
 @app.route("/about")
 def about():
     return render_template("about.html", current_user=current_user)
